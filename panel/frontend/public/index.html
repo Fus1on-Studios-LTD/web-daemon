@@ -4,24 +4,76 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Hosting Panel</title>
-    <style>body{font-family:Arial,Helvetica,sans-serif;margin:40px}</style>
+    <style>
+      body { font-family: Arial, Helvetica, sans-serif; margin: 40px; }
+      label { display: block; margin: 8px 0 4px; }
+      input { padding: 8px; width: 100%; max-width: 320px; }
+      button { margin-top: 12px; padding: 10px 16px; }
+      .card { border: 1px solid #ddd; padding: 18px; max-width: 420px; margin-bottom: 24px; }
+    </style>
   </head>
   <body>
     <h1>Hosting Admin Panel (Prototype)</h1>
-    <p>
-      <a href="/auth/google">Sign in with Google</a>
-    </p>
+    <div class="card">
+      <h2>Sign in</h2>
+      <p><a href="/auth/google">Sign in with Google</a></p>
+      <form id="login-form">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" required />
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required />
+        <button type="submit">Sign in with username/password</button>
+      </form>
+      <div id="login-status"></div>
+    </div>
     <div id="app"></div>
     <script>
+      const status = document.getElementById('login-status');
+      const app = document.getElementById('app');
+      const loginForm = document.getElementById('login-form');
+
+      loginForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        status.textContent = 'Logging in...';
+        const form = new FormData(loginForm);
+        const res = await fetch('/auth/local', {
+          method: 'POST',
+          body: new URLSearchParams(form),
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' }
+        });
+        if (!res.ok) {
+          status.textContent = 'Login failed';
+          return;
+        }
+        const data = await res.json();
+        status.textContent = 'Logged in as ' + (data.user.displayName || data.user.username);
+        loadSites();
+      });
+
       async function fetchSites(){
-        try{
+        try {
           const res = await fetch('/api/sites', { credentials: 'include' });
-          if (!res.ok) return document.getElementById('app').innerText = 'Not authenticated or no sites';
+          if (!res.ok) {
+            return false;
+          }
           const sites = await res.json();
-          document.getElementById('app').innerHTML = '<pre>'+JSON.stringify(sites,null,2)+'</pre>';
-        }catch(e){ document.getElementById('app').innerText = 'Error fetching sites'; }
+          app.innerHTML = '<h2>Sites</h2><pre>' + JSON.stringify(sites, null, 2) + '</pre>';
+          return true;
+        } catch (e) {
+          app.innerText = 'Error fetching sites';
+          return false;
+        }
       }
-      fetchSites();
+
+      async function loadSites(){
+        const authenticated = await fetchSites();
+        if (!authenticated) {
+          app.innerHTML = '<p>Please sign in above to view sites.</p>';
+        }
+      }
+
+      loadSites();
     </script>
   </body>
 </html>

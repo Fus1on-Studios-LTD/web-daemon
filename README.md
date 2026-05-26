@@ -19,11 +19,8 @@ Services:
  - `reverse` - NGINX reverse proxy on host ports 80 and 443. It provides same-origin routing so OAuth and cookies work from the panel and serves TLS for `web-daemon.fus1on.host` when certificates are provided.
  
  Before running:
- - Copy `panel/backend/.env.example` to `panel/backend/.env` and fill `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
- 
- - The `daemon` service requires access to Docker. The Docker socket is mounted into the container; the host must allow this (see docs/runbook.md for security notes).
- 
-TLS / Domain setup
+ - Copy `panel/backend/.env.example` to `panel/backend/.env` and fill `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and local admin credentials (`ADMIN_USERNAME`, `ADMIN_PASSWORD`).
+ - Use the default admin credentials only in development. For production, set a strong `ADMIN_PASSWORD` or `ADMIN_PASSWORD_HASH`.
  - Point DNS A record for `web-daemon.fus1on.host` to the host running this stack.
  - Obtain certificates using `certbot` on the host and copy them into `deploy/nginx/certs/` named `fullchain.pem` and `privkey.pem`.
  	Example layout:

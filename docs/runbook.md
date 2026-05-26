@@ -6,9 +6,10 @@
 docker compose up --build
 ```
 
-2. Configure OAuth:
+2. Configure authentication:
 - Register a Google OAuth client and set redirect to `https://web-daemon.fus1on.host/auth/google/callback` (use HTTPS when certs are provisioned).
 - Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `panel/backend/.env`.
+- Set default admin credentials in `panel/backend/.env` using `ADMIN_USERNAME` and `ADMIN_PASSWORD`, or provide a bcrypt hash with `ADMIN_PASSWORD_HASH`.
 
 3. Reverse proxy & same-origin:
 - The stack uses Traefik as the gateway on host ports 80 and 443. Once DNS points `web-daemon.fus1on.host` to this host, Traefik will obtain certificates from Let's Encrypt automatically.
