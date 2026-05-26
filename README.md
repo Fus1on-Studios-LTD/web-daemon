@@ -12,15 +12,36 @@ Services:
 - `daemon` - lightweight API to manage sites (stubbed for prototype) on port 3008.
 - `panel-backend` - Express backend with Google OAuth skeleton on port 4000.
 - `panel-frontend` - static frontend served by nginx on port 8080.
+ - `panel-frontend` - static frontend served by nginx (proxied by the `reverse` gateway).
 - `db` - Postgres for panel persistence (example only).
 
-Gateway:
-- `reverse` - NGINX reverse proxy on host port 8080. It provides same-origin routing so OAuth and cookies work from the panel.
+ Gateway:
+ - `reverse` - NGINX reverse proxy on host ports 80 and 443. It provides same-origin routing so OAuth and cookies work from the panel and serves TLS for `web-daemon.fus1on.host` when certificates are provided.
+ 
+ Before running:
+ - Copy `panel/backend/.env.example` to `panel/backend/.env` and fill `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+ 
+ - The `daemon` service requires access to Docker. The Docker socket is mounted into the container; the host must allow this (see docs/runbook.md for security notes).
+ 
+TLS / Domain setup
+ - Point DNS A record for `web-daemon.fus1on.host` to the host running this stack.
+ - Obtain certificates using `certbot` on the host and copy them into `deploy/nginx/certs/` named `fullchain.pem` and `privkey.pem`.
+ 	Example layout:
 
-Before running:
-- Copy `panel/backend/.env.example` to `panel/backend/.env` and fill `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+ ```
+ deploy/nginx/certs/fullchain.pem
+ deploy/nginx/certs/privkey.pem
+ ```
 
-- The `daemon` service requires access to Docker. Docker socket is mounted read-only into the container; the host must allow this.
+ - Example certbot steps (run on the host):
+ ```bash
+ sudo certbot certonly --standalone -d web-daemon.fus1on.host
+ sudo mkdir -p deploy/nginx/certs
+ sudo cp /etc/letsencrypt/live/web-daemon.fus1on.host/fullchain.pem deploy/nginx/certs/
+ sudo cp /etc/letsencrypt/live/web-daemon.fus1on.host/privkey.pem deploy/nginx/certs/
+ sudo chown $(id -u):$(id -g) deploy/nginx/certs/*
+ ```
 
+ - Alternatively, terminate TLS at a managed load balancer or use an external ACME client.
 Security:
 - This is a prototype. Do not expose secrets or use in production without securing sessions, HTTPS, and proper credential handling.
