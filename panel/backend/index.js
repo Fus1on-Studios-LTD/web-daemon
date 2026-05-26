@@ -125,6 +125,16 @@ app.get('/api/sites', ensureAuth, async (req, res) => {
   }
 });
 
+app.post('/api/sites', ensureAuth, async (req, res) => {
+  try {
+    const result = await daemonRequest('POST', '/sites', req.body);
+    return res.status(result.status).json(result.body || {});
+  } catch (error) {
+    console.error('daemon proxy failed', error);
+    return res.status(502).json({ error: 'daemon_unavailable', message: error.message });
+  }
+});
+
 app.post('/api/sites/:id/start', ensureAuth, async (req, res) => {
   try {
     const result = await daemonRequest('POST', `/sites/${encodeURIComponent(req.params.id)}/start`);

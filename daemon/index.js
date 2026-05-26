@@ -22,9 +22,8 @@ const sites = [
     image: 'node:18-alpine',
     internalPort: 3000,
     hostPort: 4001,
-    volumes: ['/srv/web-hosting/sites/example-node:/usr/src/app'],
     env: { NODE_ENV: 'production' },
-    cmd: ['sh', '-c', 'cd /usr/src/app && npm install && npm start']
+    cmd: ['node', '-e', "require('http').createServer((req, res) => res.end('Hello from example-node\\n')).listen(3000)"]
   },
   {
     id: 'site-php',
@@ -32,8 +31,7 @@ const sites = [
     runtime: 'php',
     image: 'php:8.2-apache',
     internalPort: 80,
-    hostPort: 4002,
-    volumes: ['/srv/web-hosting/sites/example-php:/var/www/html']
+    hostPort: 4002
   },
   {
     id: 'site-static',
@@ -41,8 +39,7 @@ const sites = [
     runtime: 'static',
     image: 'nginx:stable-alpine',
     internalPort: 80,
-    hostPort: 4003,
-    volumes: ['/srv/web-hosting/sites/example-static:/usr/share/nginx/html']
+    hostPort: 4003
   }
 ];
 
@@ -55,6 +52,89 @@ async function containerForSite(site) {
   } catch (e) {
     return { container: null, info: null };
   }
+}
+
+function isValidBindSpec(bind) {
+  if (typeof bind !== 'string') return false;
+  const parts = bind.split(':');
+  if (parts.length < 2) return false;
+  const [hostPath, containerPath] = parts;
+  if (!hostPath || !containerPath) return false;
+  if (!path.isAbsolute(hostPath) || !path.isAbsolute(containerPath)) return false;
+  return true;
+}
+
+function normalizeBindSpecs(volumes) {
+  if (!Array.isArray(volumes)) return [];
+  return volumes.filter(isValidBindSpec);
+}
+
+function nextHostPort() {
+  const used = new Set(sites.map(s => Number(s.hostPort)).filter(n => Number.isInteger(n)));
+  let port = 4001;
+  while (used.has(port)) port += 1;
+  return port;
+}
+
+function createSiteConfig(name, runtime) {
+  const normalized = String(runtime || '').trim().toLowerCase();
+  const id = String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^[-]+|[-]+$/g, '');
+  if (!id) return null;
+
+  const hostPort = nextHostPort();
+  if (normalized === 'node') {
+    return {
+      id,
+      name: String(name).trim(),
+      runtime: 'node',
+      image: 'node:18-alpine',
+      internalPort: 3000,
+      hostPort,
+      env: { NODE_ENV: 'production', SITE_NAME: String(name).trim() },
+      cmd: ['node', '-e', "require('http').createServer((req, res) => res.end('Hello from ' + process.env.SITE_NAME + '\\n')).listen(3000)"]
+    };
+  }
+
+  if (normalized === 'php') {
+    return {
+      id,
+      name: String(name).trim(),
+      runtime: 'php',
+      image: 'php:8.2-apache',
+      internalPort: 80,
+      hostPort
+    };
+  }
+
+  if (normalized === 'static') {
+    return {
+      id,
+      name: String(name).trim(),
+      runtime: 'static',
+      image: 'nginx:stable-alpine',
+      internalPort: 80,
+      hostPort
+    };
+  }
+
+  return null;
+}
+
+async function ensureImage(image) {
+  try {
+    await docker.getImage(image).inspect();
+    return;
+  } catch (e) {
+    console.log(`Image ${image} not found locally, pulling...`);
+  }
+
+  const stream = await docker.pull(image);
+  await new Promise((resolve, reject) => {
+    docker.modem.followProgress(stream, (err) => {
+      if (err) return reject(err);
+      resolve();
+    });
+  });
 }
 
 function generateSiteMap() {
@@ -107,6 +187,30 @@ app.get('/sites', async (req, res) => {
   res.json(results);
 });
 
+app.post('/sites', async (req, res) => {
+  const { name, runtime } = req.body || {};
+  if (!name || !runtime) {
+    return res.status(400).json({ error: 'invalid_payload', required: ['name', 'runtime'] });
+  }
+
+  const id = String(name).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^[-]+|[-]+$/g, '');
+  if (!id) {
+    return res.status(400).json({ error: 'invalid_name' });
+  }
+  if (sites.some(site => site.id === id)) {
+    return res.status(409).json({ error: 'site_exists', id });
+  }
+
+  const site = createSiteConfig(name, runtime);
+  if (!site) {
+    return res.status(400).json({ error: 'invalid_runtime', allowed: ['node', 'php', 'static'] });
+  }
+
+  sites.push(site);
+  await writeSiteMap();
+  return res.status(201).json({ site, status: 'absent' });
+});
+
 app.post('/sites/:id/start', async (req, res) => {
   const s = sites.find(x => x.id === req.params.id);
   if (!s) return res.status(404).json({ error: 'not found' });
@@ -120,6 +224,7 @@ app.post('/sites/:id/start', async (req, res) => {
     }
 
     const env = Object.entries(s.env || {}).map(([key, value]) => `${key}=${value}`);
+    const bindMounts = normalizeBindSpecs(s.volumes);
     const createOpts = {
       name,
       Image: s.image,
@@ -128,7 +233,6 @@ app.post('/sites/:id/start', async (req, res) => {
       },
       HostConfig: {
         RestartPolicy: { Name: 'always' },
-        Binds: s.volumes || [],
         PortBindings: {
           [`${s.internalPort}/tcp`]: [{ HostPort: String(s.hostPort) }]
         }
@@ -136,11 +240,30 @@ app.post('/sites/:id/start', async (req, res) => {
       Env: env
     };
 
+    if (bindMounts.length) {
+      createOpts.HostConfig.Binds = bindMounts;
+    }
+
     if (s.cmd) {
       createOpts.Cmd = s.cmd;
     }
-    if (s.runtime === 'node') {
+    if (s.runtime === 'node' && Array.isArray(s.volumes) && s.volumes.length > 0) {
       createOpts.WorkingDir = '/usr/src/app';
+    }
+
+    if (s.volumes && Array.isArray(s.volumes) && s.volumes.length > 0 && !bindMounts.length) {
+      return res.status(400).json({ error: 'invalid_volume_specs', message: 'One or more volume mounts are invalid. Use absolute host and container paths.' });
+    }
+
+    if (!s.image) {
+      return res.status(500).json({ error: 'missing_image', message: 'Site configuration has no image' });
+    }
+
+    try {
+      await ensureImage(s.image);
+    } catch (imageError) {
+      console.error('image pull failed', imageError);
+      return res.status(500).json({ error: 'image_pull_failed', message: imageError.message });
     }
 
     const created = await docker.createContainer(createOpts);

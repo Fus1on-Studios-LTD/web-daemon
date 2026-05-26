@@ -550,8 +550,34 @@
     });
   });
 
-  document.getElementById('add-site-btn').addEventListener('click', () => {
-    toast('Add Site is not supported yet. Use existing site cards to manage running sites.', 'info');
+  document.getElementById('add-site-btn').addEventListener('click', async () => {
+    const name = prompt('Enter a name for the new site');
+    if (!name) return;
+
+    const runtime = prompt('Enter runtime (node, php, static)');
+    if (!runtime) return;
+    const normalized = runtime.trim().toLowerCase();
+    if (!['node', 'php', 'static'].includes(normalized)) {
+      toast('Runtime must be node, php, or static', 'error');
+      return;
+    }
+
+    const res = await fetch('/api/sites', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), runtime: normalized })
+    });
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      toast(error.error ? `Failed to add site: ${error.error}` : 'Failed to add site', 'error');
+      return;
+    }
+
+    const payload = await res.json();
+    toast(`Site created: ${payload.site?.name || name}`, 'success');
+    loadSites();
   });
 
   document.getElementById('sites-view').addEventListener('click', async (event) => {
