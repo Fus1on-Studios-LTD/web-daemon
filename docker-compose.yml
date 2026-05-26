@@ -2,9 +2,9 @@ version: '3.8'
 services:
   daemon:
     build: ./daemon
-    # no host port; accessed via reverse proxy
+    # container listens on 3008; accessed via reverse proxy
     ports:
-      - "3000:3000"
+      - "3008:3008"
     restart: unless-stopped
     environment:
       - NODE_ENV=production

@@ -9,7 +9,7 @@ docker compose up --build
 ```
 
 Services:
-- `daemon` - lightweight API to manage sites (stubbed for prototype) on port 3000.
+- `daemon` - lightweight API to manage sites (stubbed for prototype) on port 3008.
 - `panel-backend` - Express backend with Google OAuth skeleton on port 4000.
 - `panel-frontend` - static frontend served by nginx on port 8080.
 - `db` - Postgres for panel persistence (example only).
