@@ -439,6 +439,7 @@
   const loginForm  = document.getElementById('login-form');
   const loginBtn   = document.getElementById('login-btn');
   const loginStatus = document.getElementById('login-status');
+  let latestSites = [];
 
   function showApp(user) {
     authScreen.style.display = 'none';
@@ -490,7 +491,8 @@
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const sites = await res.json();
-      renderSites(Array.isArray(sites) ? sites : []);
+      latestSites = Array.isArray(sites) ? sites : [];
+      renderSites(latestSites);
     } catch (err) {
       view.innerHTML = '<div class="empty"><div class="icon">⚠️</div><p>Could not load sites. Is the daemon reachable?</p></div>';
       toast('Failed to fetch sites', 'error');
@@ -518,7 +520,10 @@
   function sitCard(site) {
     const name   = site.name   || site.id   || 'Unnamed';
     const domain = site.domain || site.host || '—';
-    const status = site.status || 'unknown';
+    const status = (site.status || 'unknown').toLowerCase();
+    const action = status === 'running' ? 'stop' : 'start';
+    const actionLabel = status === 'running' ? 'Stop' : 'Start';
+    const actionClass = status === 'running' ? 'btn-danger' : 'btn-primary';
     return `
       <div class="site-card">
         <div class="site-card-top">
@@ -529,8 +534,8 @@
           ${statusBadge(status)}
         </div>
         <div class="site-card-actions">
-          <button class="btn btn-outline" style="flex:1;font-size:13px;">Manage</button>
-          <button class="btn btn-danger"  style="font-size:13px;padding:8px 12px;">Stop</button>
+          <button class="btn btn-outline" style="flex:1;font-size:13px;" data-site-id="${site.id}" data-action="manage">Manage</button>
+          <button class="btn ${actionClass}" style="font-size:13px;padding:8px 12px;" data-site-id="${site.id}" data-action="${action}">${actionLabel}</button>
         </div>
       </div>`;
   }
@@ -546,7 +551,44 @@
   });
 
   document.getElementById('add-site-btn').addEventListener('click', () => {
-    toast('Add Site coming soon — wire up to POST /api/sites', 'info');
+    toast('Add Site is not supported yet. Use existing site cards to manage running sites.', 'info');
+  });
+
+  document.getElementById('sites-view').addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-site-id]');
+    if (!button) return;
+
+    const siteId = button.dataset.siteId;
+    const action = button.dataset.action;
+    const site = latestSites.find(s => s.id === siteId);
+    if (!site) return;
+
+    if (action === 'manage') {
+      if (!site.proxyUrl && !site.exposedUrl) {
+        toast('No site URL available yet.', 'error');
+        return;
+      }
+      if ((site.status || '').toLowerCase() !== 'running') {
+        toast('Site is not running. Start it first.', 'warning');
+        return;
+      }
+      window.open(site.proxyUrl || site.exposedUrl, '_blank');
+      return;
+    }
+
+    const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}/${action}`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      toast(error.error ? `Failed to ${action} site: ${error.error}` : `Failed to ${action} site`, 'error');
+      return;
+    }
+
+    toast(`Site ${action}ed: ${site.name}`, 'success');
+    loadSites();
   });
 
   /* ── Boot ───────────────────────────────────────────── */
@@ -554,9 +596,10 @@
     const res = await fetch('/api/sites', { credentials: 'include' });
     if (res.ok) {
       const sites = await res.json();
+      latestSites = Array.isArray(sites) ? sites : [];
       authScreen.style.display = 'none';
       document.getElementById('user-display').textContent = 'Admin';
-      renderSites(Array.isArray(sites) ? sites : []);
+      renderSites(latestSites);
     }
     // If 401, auth screen stays visible
   })();

@@ -1,4 +1,5 @@
 require('dotenv').config();
+const http = require('http');
 const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
@@ -8,6 +9,8 @@ const bcrypt = require('bcryptjs');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+const DAEMON_HOST = process.env.DAEMON_HOST || 'daemon';
+const DAEMON_PORT = process.env.DAEMON_PORT || 3008;
 
 const DEFAULT_ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const DEFAULT_ADMIN_DISPLAY_NAME = process.env.ADMIN_DISPLAY_NAME || 'Administrator';
@@ -22,6 +25,40 @@ const adminUser = {
   email: DEFAULT_ADMIN_EMAIL,
   passwordHash: DEFAULT_ADMIN_PASSWORD_HASH || bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10)
 };
+
+function daemonRequest(method, path, body) {
+  return new Promise((resolve, reject) => {
+    const payload = body ? JSON.stringify(body) : null;
+    const req = http.request({
+      hostname: DAEMON_HOST,
+      port: DAEMON_PORT,
+      path,
+      method,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Content-Length': payload ? Buffer.byteLength(payload) : 0
+      }
+    }, res => {
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString() || '';
+        let parsed = null;
+        try {
+          parsed = text ? JSON.parse(text) : null;
+        } catch (e) {
+          return reject(new Error(`daemon_invalid_json: ${e.message}`));
+        }
+        resolve({ status: res.statusCode || 502, body: parsed });
+      });
+    });
+
+    req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
 
 function verifyLocalAdmin(username, password, done) {
   if (username !== adminUser.username) {
@@ -78,14 +115,50 @@ function ensureAuth(req, res, next) {
   return res.status(401).json({ error: 'unauthenticated' });
 }
 
-app.get('/api/sites', ensureAuth, (req, res) => {
-  res.json([{ id: 'site-1', name: 'example', runtime: 'node' }]);
+app.get('/api/sites', ensureAuth, async (req, res) => {
+  try {
+    const result = await daemonRequest('GET', '/sites');
+    return res.status(result.status).json(result.body || []);
+  } catch (error) {
+    console.error('daemon proxy failed', error);
+    return res.status(502).json({ error: 'daemon_unavailable', message: error.message });
+  }
+});
+
+app.post('/api/sites/:id/start', ensureAuth, async (req, res) => {
+  try {
+    const result = await daemonRequest('POST', `/sites/${encodeURIComponent(req.params.id)}/start`);
+    return res.status(result.status).json(result.body || {});
+  } catch (error) {
+    console.error('daemon proxy failed', error);
+    return res.status(502).json({ error: 'daemon_unavailable', message: error.message });
+  }
+});
+
+app.post('/api/sites/:id/stop', ensureAuth, async (req, res) => {
+  try {
+    const result = await daemonRequest('POST', `/sites/${encodeURIComponent(req.params.id)}/stop`);
+    return res.status(result.status).json(result.body || {});
+  } catch (error) {
+    console.error('daemon proxy failed', error);
+    return res.status(502).json({ error: 'daemon_unavailable', message: error.message });
+  }
+});
+
+app.post('/api/sites/:id/reload', ensureAuth, async (req, res) => {
+  try {
+    const result = await daemonRequest('POST', `/sites/${encodeURIComponent(req.params.id)}/reload`);
+    return res.status(result.status).json(result.body || {});
+  } catch (error) {
+    console.error('daemon proxy failed', error);
+    return res.status(502).json({ error: 'daemon_unavailable', message: error.message });
+  }
 });
 
 app.get('/api/user', ensureAuth, (req, res) => {
   res.json({ user: req.user });
 });
 
-app.get('/', (req, res) => res.send('Panel backend running. Use /auth/google or POST /auth/local to authenticate.'));
+app.get('/', (req, res) => res.send('Panel backend running. Use /auth/google orr POST /auth/local to authenticate.'));
 
 app.listen(PORT, () => console.log(`Panel backend listening on ${PORT}`));
