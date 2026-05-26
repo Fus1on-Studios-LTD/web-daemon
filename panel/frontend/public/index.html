@@ -1,79 +1,565 @@
 <!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Hosting Panel</title>
-    <style>
-      body { font-family: Arial, Helvetica, sans-serif; margin: 40px; }
-      label { display: block; margin: 8px 0 4px; }
-      input { padding: 8px; width: 100%; max-width: 320px; }
-      button { margin-top: 12px; padding: 10px 16px; }
-      .card { border: 1px solid #ddd; padding: 18px; max-width: 420px; margin-bottom: 24px; }
-    </style>
-  </head>
-  <body>
-    <h1>Hosting Admin Panel (Prototype)</h1>
-    <div class="card">
-      <h2>Sign in</h2>
-      <p><a href="/auth/google">Sign in with Google</a></p>
-      <form id="login-form">
-        <label for="username">Username</label>
-        <input id="username" name="username" type="text" required />
-        <label for="password">Password</label>
-        <input id="password" name="password" type="password" required />
-        <button type="submit">Sign in with username/password</button>
-      </form>
-      <div id="login-status"></div>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>web-daemon · Hosting Panel</title>
+  <style>
+    /* ── Tokens ─────────────────────────────────────────── */
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --border:    #2a2d3e;
+      --accent:    #6366f1;
+      --accent-h:  #4f52d8;
+      --text:      #e2e4f0;
+      --muted:     #8b8fa8;
+      --green:     #22c55e;
+      --red:       #ef4444;
+      --yellow:    #f59e0b;
+      --radius:    10px;
+      --sidebar-w: 220px;
+    }
+
+    /* ── Reset ──────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+    }
+
+    /* ── Sidebar ────────────────────────────────────────── */
+    #sidebar {
+      width: var(--sidebar-w);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 24px 16px;
+      gap: 8px;
+      position: fixed;
+      inset: 0 auto 0 0;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 8px 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 8px;
+    }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      font-size: 16px;
+    }
+    .logo-name { font-weight: 700; font-size: 15px; }
+    .logo-sub  { font-size: 11px; color: var(--muted); }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--muted);
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+      transition: background 0.15s, color 0.15s;
+    }
+    .nav-item:hover     { background: var(--border); color: var(--text); }
+    .nav-item.active    { background: var(--accent); color: #fff; }
+    .nav-item .icon     { font-size: 16px; width: 20px; text-align: center; }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    #user-display { font-weight: 600; color: var(--text); margin-bottom: 4px; }
+
+    /* ── Main ───────────────────────────────────────────── */
+    #main {
+      margin-left: var(--sidebar-w);
+      flex: 1;
+      padding: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .page-header h1 { font-size: 22px; font-weight: 700; }
+    .page-header p  { color: var(--muted); font-size: 14px; margin-top: 2px; }
+
+    /* ── Auth screen ────────────────────────────────────── */
+    #auth-screen {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .auth-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px;
+      width: 100%;
+      max-width: 380px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .auth-card h2       { font-size: 20px; font-weight: 700; }
+    .auth-card p        { color: var(--muted); font-size: 14px; margin-top: -12px; }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── Form controls ──────────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 13px; font-weight: 500; }
+
+    input[type="text"],
+    input[type="password"] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+      width: 100%;
+    }
+    input:focus { border-color: var(--accent); }
+
+    /* ── Buttons ────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+      text-decoration: none;
+    }
+    .btn-primary  { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-h); }
+    .btn-outline  {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-outline:hover { background: var(--border); }
+    .btn-danger   { background: var(--red); color: #fff; }
+    .btn-danger:hover  { opacity: 0.85; }
+    .btn-full     { width: 100%; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Status badges ──────────────────────────────────── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 99px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
+    .badge-green  { background: #16a34a22; color: var(--green); }
+    .badge-green::before  { background: var(--green); }
+    .badge-red    { background: #dc262622; color: var(--red); }
+    .badge-red::before    { background: var(--red); }
+    .badge-yellow { background: #d9770622; color: var(--yellow); }
+    .badge-yellow::before { background: var(--yellow); }
+
+    /* ── Site cards grid ────────────────────────────────── */
+    .site-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .site-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: border-color 0.15s;
+    }
+    .site-card:hover { border-color: var(--accent); }
+
+    .site-card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+    .site-name   { font-weight: 600; font-size: 15px; }
+    .site-domain { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .site-card-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    /* ── Stat strip ─────────────────────────────────────── */
+    .stats-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 16px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+    .stat-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .stat-value { font-size: 26px; font-weight: 700; }
+    .stat-sub   { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* ── Toast ──────────────────────────────────────────── */
+    #toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 200;
+    }
+    .toast {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 18px;
+      font-size: 14px;
+      box-shadow: 0 4px 20px #0006;
+      animation: slide-in 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .toast.error { border-color: var(--red); }
+    .toast.success { border-color: var(--green); }
+    @keyframes slide-in {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Spinner ────────────────────────────────────────── */
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Empty state ────────────────────────────────────── */
+    .empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+    .empty .icon { font-size: 48px; margin-bottom: 12px; }
+    .empty p { font-size: 15px; }
+
+    /* ── Responsive ─────────────────────────────────────── */
+    @media (max-width: 640px) {
+      #sidebar { display: none; }
+      #main { margin-left: 0; padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Auth overlay ──────────────────────────────────────── -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div>
+      <h2>🌐 web-daemon</h2>
+      <p>Sign in to manage your hosted sites</p>
     </div>
-    <div id="app"></div>
-    <script>
-      const status = document.getElementById('login-status');
-      const app = document.getElementById('app');
-      const loginForm = document.getElementById('login-form');
 
-      loginForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        status.textContent = 'Logging in...';
-        const form = new FormData(loginForm);
-        const res = await fetch('/auth/local', {
-          method: 'POST',
-          body: new URLSearchParams(form),
-          credentials: 'include',
-          headers: { 'Accept': 'application/json' }
-        });
-        if (!res.ok) {
-          status.textContent = 'Login failed';
-          return;
-        }
-        const data = await res.json();
-        status.textContent = 'Logged in as ' + (data.user.displayName || data.user.username);
-        loadSites();
-      });
+    <a href="/auth/google" class="btn btn-outline btn-full">
+      <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      Continue with Google
+    </a>
 
-      async function fetchSites(){
-        try {
-          const res = await fetch('/api/sites', { credentials: 'include' });
-          if (!res.ok) {
-            return false;
-          }
-          const sites = await res.json();
-          app.innerHTML = '<h2>Sites</h2><pre>' + JSON.stringify(sites, null, 2) + '</pre>';
-          return true;
-        } catch (e) {
-          app.innerText = 'Error fetching any sites';
-          return false;
-        }
+    <div class="divider">or use credentials</div>
+
+    <form id="login-form" style="display:flex;flex-direction:column;gap:14px;">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" placeholder="admin" required />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" placeholder="••••••••" required />
+      </div>
+      <button type="submit" class="btn btn-primary btn-full" id="login-btn">
+        Sign in
+      </button>
+    </form>
+
+    <div id="login-status" style="font-size:13px;color:var(--red);min-height:18px;"></div>
+  </div>
+</div>
+
+<!-- ── Sidebar ────────────────────────────────────────────── -->
+<nav id="sidebar">
+  <div class="logo">
+    <div class="logo-icon">🌐</div>
+    <div>
+      <div class="logo-name">web-daemon</div>
+      <div class="logo-sub">Hosting Panel</div>
+    </div>
+  </div>
+
+  <button class="nav-item active" data-view="sites">
+    <span class="icon">🗂</span> Sites
+  </button>
+  <button class="nav-item" data-view="settings">
+    <span class="icon">⚙️</span> Settings
+  </button>
+
+  <div class="sidebar-footer">
+    <div id="user-display">—</div>
+    <button class="btn btn-outline" id="logout-btn" style="margin-top:8px;width:100%;font-size:13px;padding:7px;">
+      Sign out
+    </button>
+  </div>
+</nav>
+
+<!-- ── Main content ──────────────────────────────────────── -->
+<main id="main">
+  <div class="page-header">
+    <div>
+      <h1 id="page-title">Sites</h1>
+      <p id="page-sub">All hosted sites managed by this daemon</p>
+    </div>
+    <button class="btn btn-primary" id="add-site-btn">＋ Add Site</button>
+  </div>
+
+  <!-- Stats strip -->
+  <div class="stats-strip" id="stats-strip">
+    <div class="stat-card">
+      <div class="stat-label">Total Sites</div>
+      <div class="stat-value" id="stat-total">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Running</div>
+      <div class="stat-value" id="stat-running" style="color:var(--green)">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Stopped</div>
+      <div class="stat-value" id="stat-stopped" style="color:var(--red)">—</div>
+    </div>
+  </div>
+
+  <!-- Site cards -->
+  <div id="sites-view">
+    <div class="empty">
+      <div class="icon">⏳</div>
+      <p>Loading sites…</p>
+    </div>
+  </div>
+</main>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script>
+  /* ── Helpers ────────────────────────────────────────── */
+  function toast(msg, type = 'info') {
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.textContent = msg;
+    document.getElementById('toast-container').appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+  }
+
+  function statusBadge(status) {
+    const s = (status || 'unknown').toLowerCase();
+    if (s === 'running') return `<span class="badge badge-green">Running</span>`;
+    if (s === 'stopped') return `<span class="badge badge-red">Stopped</span>`;
+    return `<span class="badge badge-yellow">${status || 'Unknown'}</span>`;
+  }
+
+  /* ── Auth ───────────────────────────────────────────── */
+  const authScreen = document.getElementById('auth-screen');
+  const loginForm  = document.getElementById('login-form');
+  const loginBtn   = document.getElementById('login-btn');
+  const loginStatus = document.getElementById('login-status');
+
+  function showApp(user) {
+    authScreen.style.display = 'none';
+    document.getElementById('user-display').textContent =
+      user.displayName || user.username || 'Admin';
+    loadSites();
+  }
+
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    loginBtn.disabled = true;
+    loginBtn.innerHTML = '<span class="spinner"></span> Signing in…';
+    loginStatus.textContent = '';
+
+    const res = await fetch('/auth/local', {
+      method: 'POST',
+      body: new URLSearchParams(new FormData(loginForm)),
+      credentials: 'include',
+      headers: { Accept: 'application/json' }
+    });
+
+    loginBtn.disabled = false;
+    loginBtn.textContent = 'Sign in';
+
+    if (!res.ok) {
+      loginStatus.textContent = 'Invalid credentials — please try again.';
+      return;
+    }
+    const data = await res.json();
+    showApp(data.user);
+  });
+
+  document.getElementById('logout-btn').addEventListener('click', async () => {
+    await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
+    location.reload();
+  });
+
+  /* ── Sites ──────────────────────────────────────────── */
+  async function loadSites() {
+    const view = document.getElementById('sites-view');
+    view.innerHTML = '<div class="empty"><div class="spinner" style="width:32px;height:32px;margin:0 auto 12px"></div><p>Fetching sites…</p></div>';
+
+    try {
+      const res = await fetch('/api/sites', { credentials: 'include' });
+      if (res.status === 401) {
+        authScreen.style.display = 'flex';
+        return;
       }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      async function loadSites(){
-        const authenticated = await fetchSites();
-        if (!authenticated) {
-          app.innerHTML = '<p>Please sign in above to view sites.</p>';
-        }
-      }
+      const sites = await res.json();
+      renderSites(Array.isArray(sites) ? sites : []);
+    } catch (err) {
+      view.innerHTML = '<div class="empty"><div class="icon">⚠️</div><p>Could not load sites. Is the daemon reachable?</p></div>';
+      toast('Failed to fetch sites', 'error');
+    }
+  }
 
-      loadSites();
-    </script>
-  </body>
+  function renderSites(sites) {
+    const running = sites.filter(s => (s.status || '').toLowerCase() === 'running').length;
+    const stopped = sites.filter(s => (s.status || '').toLowerCase() === 'stopped').length;
+
+    document.getElementById('stat-total').textContent   = sites.length;
+    document.getElementById('stat-running').textContent = running;
+    document.getElementById('stat-stopped').textContent = stopped;
+
+    const view = document.getElementById('sites-view');
+
+    if (!sites.length) {
+      view.innerHTML = '<div class="empty"><div class="icon">🌐</div><p>No sites yet — click <strong>Add Site</strong> to get started.</p></div>';
+      return;
+    }
+
+    view.innerHTML = `<div class="site-grid">${sites.map(sitCard).join('')}</div>`;
+  }
+
+  function sitCard(site) {
+    const name   = site.name   || site.id   || 'Unnamed';
+    const domain = site.domain || site.host || '—';
+    const status = site.status || 'unknown';
+    return `
+      <div class="site-card">
+        <div class="site-card-top">
+          <div>
+            <div class="site-name">${name}</div>
+            <div class="site-domain">${domain}</div>
+          </div>
+          ${statusBadge(status)}
+        </div>
+        <div class="site-card-actions">
+          <button class="btn btn-outline" style="flex:1;font-size:13px;">Manage</button>
+          <button class="btn btn-danger"  style="font-size:13px;padding:8px 12px;">Stop</button>
+        </div>
+      </div>`;
+  }
+
+  /* ── Nav ────────────────────────────────────────────── */
+  document.querySelectorAll('.nav-item[data-view]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('page-title').textContent =
+        btn.dataset.view.charAt(0).toUpperCase() + btn.dataset.view.slice(1);
+    });
+  });
+
+  document.getElementById('add-site-btn').addEventListener('click', () => {
+    toast('Add Site coming soon — wire up to POST /api/sites', 'info');
+  });
+
+  /* ── Boot ───────────────────────────────────────────── */
+  (async () => {
+    const res = await fetch('/api/sites', { credentials: 'include' });
+    if (res.ok) {
+      const sites = await res.json();
+      authScreen.style.display = 'none';
+      document.getElementById('user-display').textContent = 'Admin';
+      renderSites(Array.isArray(sites) ? sites : []);
+    }
+    // If 401, auth screen stays visible
+  })();
+</script>
+</body>
 </html>

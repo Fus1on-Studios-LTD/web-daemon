@@ -88,6 +88,8 @@ async function reloadNginx() {
   }
 }
 
+writeSiteMap().catch(err => console.error('site map init failed', err));
+
 app.get('/status', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
 
 app.get('/sites', async (req, res) => {
@@ -159,10 +161,26 @@ app.post('/sites/:id/stop', async (req, res) => {
     const { container, info } = await containerForSite(s);
     if (!container || !info) return res.json({ status: 'absent' });
     if (!info.State.Running) return res.json({ status: 'stopped' });
-    await container.stop();    await writeSiteMap();
-    await reloadNginx();    return res.json({ status: 'stopped' });
+    await container.stop();
+    await writeSiteMap();
+    await reloadNginx();
+    return res.json({ status: 'stopped' });
   } catch (e) {
     console.error('stop error', e && e.message);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/sites/:id/reload', async (req, res) => {
+  const s = sites.find(x => x.id === req.params.id);
+  if (!s) return res.status(404).json({ error: 'not found' });
+  try {
+    await writeSiteMap();
+    const success = await reloadNginx();
+    if (!success) return res.status(500).json({ error: 'nginx_reload_failed' });
+    return res.json({ status: 'reloaded' });
+  } catch (e) {
+    console.error('reload error', e && e.message);
     return res.status(500).json({ error: e.message });
   }
 });
