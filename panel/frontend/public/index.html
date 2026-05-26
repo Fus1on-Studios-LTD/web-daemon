@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Hosting Panel</title>
+    <style>body{font-family:Arial,Helvetica,sans-serif;margin:40px}</style>
+  </head>
+  <body>
+    <h1>Hosting Admin Panel (Prototype)</h1>
+    <p>
+      <a href="/auth/google">Sign in with Google</a>
+    </p>
+    <div id="app"></div>
+    <script>
+      async function fetchSites(){
+        try{
+          const res = await fetch('/api/sites', { credentials: 'include' });
+          if (!res.ok) return document.getElementById('app').innerText = 'Not authenticated or no sites';
+          const sites = await res.json();
+          document.getElementById('app').innerHTML = '<pre>'+JSON.stringify(sites,null,2)+'</pre>';
+        }catch(e){ document.getElementById('app').innerText = 'Error fetching sites'; }
+      }
+      fetchSites();
+    </script>
+  </body>
+</html>

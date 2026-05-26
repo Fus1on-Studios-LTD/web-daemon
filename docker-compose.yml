@@ -1,0 +1,54 @@
+version: '3.8'
+services:
+  daemon:
+    build: ./daemon
+    # no host port; accessed via reverse proxy
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  panel-backend:
+    build: ./panel/backend
+    env_file: ./panel/backend/.env.example
+    ports:
+      - "4000:4000"
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  panel-frontend:
+    build: ./panel/frontend
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: panel
+      POSTGRES_PASSWORD: panelpass
+      POSTGRES_DB: panel
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  reverse:
+    image: nginx:stable-alpine
+    ports:
+      - "8080:80"
+    depends_on:
+      - panel-frontend
+      - panel-backend
+      - daemon
+    volumes:
+      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+volumes:
+  db_data:
+
+  
+  # Reverse proxy for same-origin auth + routing
+  
+  
