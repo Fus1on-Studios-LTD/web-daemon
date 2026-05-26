@@ -9,11 +9,16 @@ docker compose up --build
 ```
 
 Services:
-- `daemon` - lightweight API to manage sites (stubbed for prototype) on port 3008.
+- `daemon` - lightweight API to manage site containers and map host ports/volumes for hosted apps on port 3008.
 - `panel-backend` - Express backend with Google OAuth skeleton on port 4000.
 - `panel-frontend` - static frontend served by nginx on port 8080.
- - `panel-frontend` - static frontend served by nginx (proxied by the `reverse` gateway).
 - `db` - Postgres for panel persistence (example only).
+
+Hosted sites:
+- The daemon can create containers using configured host ports and bind mounts for site code.
+- Example site mappings are defined in `daemon/index.js`, including Node, PHP, and static sites.
+- These site containers are exposed on host ports such as `4001`, `4002`, and `4003`.
+- NGINX also proxies them through `https://web-daemon.fus1on.host/site/<site-id>/`.
 
  Gateway:
  - `reverse` - NGINX reverse proxy on host ports 80 and 443. It provides same-origin routing so OAuth and cookies work from the panel and serves TLS for `web-daemon.fus1on.host` when certificates are provided.
