@@ -10,9 +10,11 @@ services:
       - NODE_ENV=production
       - NGINX_CONFIG_DIR=/deploy/nginx
       - NGINX_CONTAINER_NAME=reverse
+      - SITE_STORAGE_DIR=/srv/web-hosting/sites
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./deploy/nginx:/deploy/nginx
+      - ./deploy/sites:/srv/web-hosting/sites
 
   panel-backend:
     build: ./panel/backend

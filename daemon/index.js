@@ -7,14 +7,14 @@ const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
 const NGINX_CONFIG_DIR = process.env.NGINX_CONFIG_DIR || '/deploy/nginx';
 const NGINX_CONTAINER_NAME = process.env.NGINX_CONTAINER_NAME || 'reverse';
+const SITE_STORAGE_DIR = process.env.SITE_STORAGE_DIR || '/srv/web-hosting/sites';
+const SITE_REGISTRY_PATH = path.join(SITE_STORAGE_DIR, 'sites.json');
 const siteMapPath = path.join(NGINX_CONFIG_DIR, 'site-map.conf');
 
 const app = express();
 app.use(bodyParser.json());
 
-// Example site registry with real host port and volume mappings.
-// In production, persist this registry to a database or config store.
-const sites = [
+const DEFAULT_SITES = [
   {
     id: 'site-node',
     name: 'example-node',
@@ -43,7 +43,81 @@ const sites = [
   }
 ];
 
-async function containerForSite(site) {
+let sites = [];
+
+async function loadSiteRegistry() {
+  try {
+    const raw = await fs.promises.readFile(SITE_REGISTRY_PATH, 'utf8');
+    sites = JSON.parse(raw);
+    if (!Array.isArray(sites)) throw new Error('site registry missing array');
+  } catch (e) {
+    sites = DEFAULT_SITES.slice();
+  }
+}
+
+async function saveSiteRegistry() {
+  await fs.promises.mkdir(SITE_STORAGE_DIR, { recursive: true });
+  await fs.promises.writeFile(SITE_REGISTRY_PATH, JSON.stringify(sites, null, 2), 'utf8');
+}
+
+function isValidBindSpec(bind) {
+  if (typeof bind !== 'string') return false;
+  const parts = bind.split(':');
+  if (parts.length < 2) return false;
+  const [hostPath, containerPath] = parts;
+  if (!hostPath || !containerPath) return false;
+  if (!path.isAbsolute(hostPath) || !path.isAbsolute(containerPath)) return false;
+  return true;
+}
+
+function normalizeBindSpecs(volumes) {
+  if (!Array.isArray(volumes)) return [];
+  return volumes.filter(isValidBindSpec);
+}
+
+async function createSiteSourceFiles(site) {
+  if (!site.volumes || !site.volumes.length) return;
+  const hostPath = site.volumes[0].split(':')[0];
+  await fs.promises.mkdir(hostPath, { recursive: true });
+
+  if (site.runtime === 'node') {
+    const pkgPath = path.join(hostPath, 'package.json');
+    const indexPath = path.join(hostPath, 'index.js');
+    if (!fs.existsSync(pkgPath)) {
+      await fs.promises.writeFile(pkgPath, JSON.stringify({
+        name: site.id,
+        version: '0.1.0',
+        main: 'index.js',
+        scripts: { start: 'node index.js' }
+      }, null, 2), 'utf8');
+    }
+    if (!fs.existsSync(indexPath)) {
+      await fs.promises.writeFile(indexPath,
+        `const http = require('http');\nhttp.createServer((req, res) => {\n  res.writeHead(200, { 'Content-Type': 'text/plain' });\n  res.end('Hello from ${site.name}!\\n');\n}).listen(3000);\n`, 'utf8');
+    }
+    return;
+  }
+
+  if (site.runtime === 'php') {
+    const indexPath = path.join(hostPath, 'index.php');
+    if (!fs.existsSync(indexPath)) {
+      await fs.promises.writeFile(indexPath,
+        `<?php\n echo '<h1>Hello from ${site.name}!</h1>';\n`, 'utf8');
+    }
+    return;
+  }
+
+  if (site.runtime === 'static') {
+    const indexPath = path.join(hostPath, 'index.html');
+    if (!fs.existsSync(indexPath)) {
+      await fs.promises.writeFile(indexPath,
+        `<!doctype html>\n<html><head><meta charset="utf-8"><title>${site.name}</title></head><body><h1>Hello from ${site.name}!</h1></body></html>`, 'utf8');
+    }
+    return;
+  }
+}
+
+function nextHostPort() {
   const name = `site_${site.id}`;
   try {
     const container = docker.getContainer(name);
@@ -83,6 +157,7 @@ function createSiteConfig(name, runtime) {
 
   const hostPort = nextHostPort();
   if (normalized === 'node') {
+    const hostPath = path.join(SITE_STORAGE_DIR, id);
     return {
       id,
       name: String(name).trim(),
@@ -90,8 +165,35 @@ function createSiteConfig(name, runtime) {
       image: 'node:18-alpine',
       internalPort: 3000,
       hostPort,
+      volumes: [`${hostPath}:/usr/src/app`],
       env: { NODE_ENV: 'production', SITE_NAME: String(name).trim() },
-      cmd: ['node', '-e', "require('http').createServer((req, res) => res.end('Hello from ' + process.env.SITE_NAME + '\\n')).listen(3000)"]
+      cmd: ['sh', '-c', 'cd /usr/src/app && npm install && npm start']
+    };
+  }
+
+  if (normalized === 'php') {
+    const hostPath = path.join(SITE_STORAGE_DIR, id);
+    return {
+      id,
+      name: String(name).trim(),
+      runtime: 'php',
+      image: 'php:8.2-apache',
+      internalPort: 80,
+      hostPort,
+      volumes: [`${hostPath}:/var/www/html`]
+    };
+  }
+
+  if (normalized === 'static') {
+    const hostPath = path.join(SITE_STORAGE_DIR, id);
+    return {
+      id,
+      name: String(name).trim(),
+      runtime: 'static',
+      image: 'nginx:stable-alpine',
+      internalPort: 80,
+      hostPort,
+      volumes: [`${hostPath}:/usr/share/nginx/html`]
     };
   }
 
@@ -168,7 +270,14 @@ async function reloadNginx() {
   }
 }
 
-writeSiteMap().catch(err => console.error('site map init failed', err));
+async function init() {
+  await loadSiteRegistry();
+  await writeSiteMap();
+  const port = process.env.PORT || 3008;
+  app.listen(port, () => console.log(`Daemon listening on ${port}`));
+}
+
+init().catch(err => console.error('init failed', err));
 
 app.get('/status', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
 
@@ -206,7 +315,9 @@ app.post('/sites', async (req, res) => {
     return res.status(400).json({ error: 'invalid_runtime', allowed: ['node', 'php', 'static'] });
   }
 
+  await createSiteSourceFiles(site);
   sites.push(site);
+  await saveSiteRegistry();
   await writeSiteMap();
   return res.status(201).json({ site, status: 'absent' });
 });
@@ -307,6 +418,3 @@ app.post('/sites/:id/reload', async (req, res) => {
     return res.status(500).json({ error: e.message });
   }
 });
-
-const port = process.env.PORT || 3008;
-app.listen(port, () => console.log(`Daemon listening on ${port}`));
